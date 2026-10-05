@@ -1,0 +1,118 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  BORROWER
+  OFFICER
+  ADMIN
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  NEEDS_INFORMATION
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  demoAlias    String   @unique
+  role         UserRole
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  profile      BorrowerProfile?
+  applications Application[] @relation("BorrowerApplications")
+  assignedApplications Application[] @relation("ReviewerAssignments")
+  consents     ConsentRecord[]
+  decisions    ReviewDecision[]
+  auditEvents  AuditEvent[]
+}
+
+model BorrowerProfile {
+  id          String @id @default(uuid()) @db.Uuid
+  userId      String @unique @db.Uuid
+  displayName String
+  user        User @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model Application {
+  id                String @id @default(uuid()) @db.Uuid
+  borrowerId        String @db.Uuid
+  reviewerId        String? @db.Uuid
+  status            ApplicationStatus @default(DRAFT)
+  revision          Int @default(0)
+  requestedAmount   Decimal @db.Decimal(18, 2)
+  currency          String @default("THB") @db.Char(3)
+  termMonths        Int
+  productVersionId  String
+  submittedSnapshot Json?
+  requestedInformation Json?
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+  borrower          User @relation("BorrowerApplications", fields: [borrowerId], references: [id], onDelete: Restrict)
+  reviewer          User? @relation("ReviewerAssignments", fields: [reviewerId], references: [id], onDelete: Restrict)
+  documents         Document[]
+  decisions         ReviewDecision[]
+  @@index([borrowerId, createdAt, id])
+  @@index([reviewerId, status, createdAt, id])
+}
+
+model Document {
+  id            String @id @default(uuid()) @db.Uuid
+  applicationId String @db.Uuid
+  storageKey    String @unique
+  documentType  String
+  mimeType      String
+  sizeBytes     Int
+  reviewStatus  String @default("UPLOADED")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  @@index([applicationId])
+}
+
+model ConsentRecord {
+  id        String @id @default(uuid()) @db.Uuid
+  userId    String @db.Uuid
+  type      String
+  version   String
+  acceptedAt DateTime @default(now()) @db.Timestamptz(3)
+  evidenceReference String
+  user      User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, type, version])
+}
+
+model ReviewDecision {
+  id            String @id @default(uuid()) @db.Uuid
+  applicationId String @db.Uuid
+  reviewerId    String @db.Uuid
+  action        String
+  reason        String
+  resultingRevision Int
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  reviewer      User @relation(fields: [reviewerId], references: [id], onDelete: Restrict)
+  @@unique([applicationId, resultingRevision])
+  @@index([reviewerId])
+}
+
+model AuditEvent {
+  id            String @id @default(uuid()) @db.Uuid
+  actorId       String? @db.Uuid
+  action        String
+  resourceType  String
+  resourceId    String
+  correlationId String
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  actor         User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  @@index([resourceType, resourceId, createdAt, id])
+  @@index([actorId])
+}
